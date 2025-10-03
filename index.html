@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Oncology Pharmacy Tickets</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+    }
+    h1 {
+      margin: 20px 0;
+    }
+    .ranges {
+      margin: 10px;
+    }
+    .ranges button {
+      margin: 5px;
+      padding: 10px 15px;
+      font-size: 16px;
+      border: none;
+      border-radius: 5px;
+      background: #f0f0f0;
+      cursor: pointer;
+    }
+    .ranges button.active {
+      background: black;
+      color: white;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+      gap: 10px;
+      margin: 20px;
+      max-width: 900px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .cell {
+      border: 2px solid #333;
+      padding: 15px 0;
+      cursor: pointer;
+      font-size: 18px;
+      border-radius: 6px;
+      background: white;
+      color: black;
+      transition: all 0.2s;
+    }
+    .cell.on { background: black; color: white; }
+    .cell.gray { background: gray; color: white; }
+    #nowServingBox {
+      background: black;
+      color: white;
+      padding: 20px;
+      border-radius: 10px;
+      display: inline-block;
+      margin: 20px auto;
+    }
+    #nowServingBox h2 {
+      margin: 0;
+      font-size: 2em;
+    }
+    #number {
+      font-size: 4em;
+      margin: 10px 0;
+    }
+    .controls {
+      margin: 20px;
+    }
+    .controls button {
+      margin: 5px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .next-btn { background: green; color: white; }
+    .noshow-btn { background: orange; color: white; }
+    .restart-btn { background: red; color: white; }
+    @media (max-width: 600px) {
+      .grid { grid-template-columns: repeat(auto-fit, minmax(40px, 1fr)); gap: 6px; }
+      .cell { font-size: 14px; padding: 10px 0; }
+      #number { font-size: 3em; }
+    }
+  </style>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+</head>
+<body>
+  <h1>Oncology Pharmacy Tickets (1–1000)</h1>
+  <div class="ranges" id="ranges"></div>
+
+  <div id="nowServingBox">
+    <h2>Now Serving:</h2>
+    <div id="number">-</div>
+    <div class="controls">
+      <button class="next-btn" onclick="nextNumber()">Next</button>
+      <button class="noshow-btn" onclick="markNoShow()">No Show</button>
+      <button class="restart-btn" onclick="restartAll()">Restart</button>
+    </div>
+  </div>
+
+  <div id="grid" class="grid"></div>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyCWWnMsge75Q3_MDF9Aj9wo4C5KD6RVGfw",
+      authDomain: "q-matic-b7d77.firebaseapp.com",
+      databaseURL: "https://q-matic-b7d77-default-rtdb.firebaseio.com",
+      projectId: "q-matic-b7d77",
+      storageBucket: "q-matic-b7d77.appspot.com",
+      messagingSenderId: "908187704899",
+      appId: "1:908187704899:web:b8bcf33cda90bafe81bef6"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    const grid = document.getElementById("grid");
+    const numDiv = document.getElementById("number");
+    const rangesDiv = document.getElementById("ranges");
+
+    let currentStart = 1, currentEnd = 100;
+    let currentNumber = 0;
+
+    // Create range buttons up to 1000
+    for (let start = 1; start <= 1000; start += 100) {
+      const end = start + 99;
+      const btn = document.createElement("button");
+      btn.textContent = `${start}–${end}`;
+      btn.onclick = () => showRange(start, end, btn);
+      rangesDiv.appendChild(btn);
+    }
+
+    function showRange(start, end, btn) {
+      currentStart = start;
+      currentEnd = end;
+      document.querySelectorAll(".ranges button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+
+      grid.innerHTML = "";
+      for (let i = start; i <= end; i++) {
+        const cell = document.createElement("div");
+        cell.className = "cell";
+        cell.textContent = i;
+        grid.appendChild(cell);
+
+        db.ref("oncology/numbers/" + i).on("value", snap => {
+          cell.classList.remove("on","gray");
+          if (snap.val() === "on") cell.classList.add("on");
+          if (snap.val() === "gray") cell.classList.add("gray");
+        });
+      }
+    }
+
+    db.ref("oncology/latest").on("value", snap => {
+      const data = snap.val();
+      if (!data) return;
+      currentNumber = data.number;
+      numDiv.textContent = currentNumber;
+    });
+
+    function nextNumber() {
+      let next = currentNumber + 1;
+      if (next > 1000) return;
+      db.ref("oncology/latest").set({ number: next, timestamp: Date.now() });
+      db.ref("oncology/numbers/" + next).set("on");
+
+      if (next > currentEnd) {
+        const nextBtn = [...document.querySelectorAll(".ranges button")].find(b => {
+          const [s,e] = b.textContent.split("–").map(Number);
+          return next >= s && next <= e;
+        });
+        if (nextBtn) nextBtn.click();
+      }
+    }
+
+    function markNoShow() {
+      if (currentNumber <= 0) return;
+      db.ref("oncology/numbers/" + currentNumber).set("gray");
+    }
+
+    function restartAll() {
+      if (!confirm("Are you sure you want to restart?")) return;
+      for (let i = 1; i <= 1000; i++) {
+        db.ref("oncology/numbers/" + i).remove();
+      }
+      db.ref("oncology/latest").remove();
+      numDiv.textContent = "-";
+    }
+
+    // Default
+    showRange(1, 100, document.querySelector(".ranges button"));
+  </script>
+</body>
+</html>
